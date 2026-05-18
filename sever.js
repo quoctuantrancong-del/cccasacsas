@@ -3,6 +3,7 @@ const path = require("path");
 const app = express();
 
 app.use(express.json({ limit: "50mb" }));
+app.use(express.urlencoded({ limit: "50mb" }));
 app.use(express.static(".")); // Serve static files (HTML, CSS, JS)
 
 // ============================================
@@ -213,82 +214,118 @@ const RULES = {
 };
 
 // ============================================
-// API ENDPOINT
+// API ENDPOINT - FIX CHÍNH
 // ============================================
 
 app.post("/api/generate", (req, res) => {
   try {
     const { mode, data, rules, customPatterns, depth, maxResults } = req.body;
     
+    // Kiểm tra dữ liệu đầu vào
+    if (!data || !Array.isArray(data) || data.length === 0) {
+      return res.status(400).json({ 
+        success: false, 
+        error: "Không có dữ liệu. Vui lòng tải file!" 
+      });
+    }
+
+    if (!rules && mode !== "custom") {
+      return res.status(400).json({ 
+        success: false, 
+        error: "Vui lòng chọn ít nhất một quy tắc!" 
+      });
+    }
+    
     const variants = new Set();
+    const maxLimit = Math.min(maxResults || 100000, 1000000);
     
     if (mode === "custom") {
+      // Custom mode: Thêm suffixes, prefixes, separators
+      if (!customPatterns || (!customPatterns.suffixes?.length && !customPatterns.prefixes?.length && !customPatterns.separators?.length)) {
+        return res.status(400).json({ 
+          success: false, 
+          error: "Vui lòng nhập ít nhất một custom pattern!" 
+        });
+      }
+
       for (const item of data) {
-        if (variants.size >= maxResults) break;
+        if (variants.size >= maxLimit) break;
         
-        const pass = item.pass;
-        const user = item.user;
+        const pass = item.pass || "";
+        const user = (item.user || "").toLowerCase();
         
         // Suffixes
-        for (const suffix of customPatterns.suffixes) {
-          if (variants.size >= maxResults) break;
-          const v = pass + suffix;
-          if (validVariant(v, pass)) {
-            variants.add(`${user.toLowerCase()}:${v}`);
+        if (customPatterns.suffixes) {
+          for (const suffix of customPatterns.suffixes) {
+            if (variants.size >= maxLimit) break;
+            const v = pass + suffix;
+            if (validVariant(v, pass)) {
+              variants.add(`${user}:${v}`);
+            }
           }
         }
         
         // Prefixes
-        for (const prefix of customPatterns.prefixes) {
-          if (variants.size >= maxResults) break;
-          const v = prefix + pass;
-          if (validVariant(v, pass)) {
-            variants.add(`${user.toLowerCase()}:${v}`);
+        if (customPatterns.prefixes) {
+          for (const prefix of customPatterns.prefixes) {
+            if (variants.size >= maxLimit) break;
+            const v = prefix + pass;
+            if (validVariant(v, pass)) {
+              variants.add(`${user}:${v}`);
+            }
           }
         }
         
         // Separators
-        for (const sep of customPatterns.separators) {
-          if (variants.size >= maxResults) break;
-          const m = pass.match(/^([A-Za-z]+)(\d+)$/) || pass.match(/^(\d+)([A-Za-z]+)$/);
-          if (m) {
-            const letters = /[a-zA-Z]/.test(m[1]) ? m[1] : m[2];
-            const digits = /\d/.test(m[1]) ? m[1] : m[2];
-            const v = letters + sep + digits;
-            if (validVariant(v, pass)) {
-              variants.add(`${user.toLowerCase()}:${v}`);
+        if (customPatterns.separators) {
+          for (const sep of customPatterns.separators) {
+            if (variants.size >= maxLimit) break;
+            const m = pass.match(/^([A-Za-z]+)(\d+)$/) || pass.match(/^(\d+)([A-Za-z]+)$/);
+            if (m) {
+              const letters = /[a-zA-Z]/.test(m[1]) ? m[1] : m[2];
+              const digits = /\d/.test(m[1]) ? m[1] : m[2];
+              const v = letters + sep + digits;
+              if (validVariant(v, pass)) {
+                variants.add(`${user}:${v}`);
+              }
             }
           }
         }
       }
     } else {
+      // Basic/Advanced mode: Áp dụng quy tắc
+      const rulesArray = Array.isArray(rules) ? rules : [];
+      
       for (const item of data) {
-        if (variants.size >= maxResults) break;
+        if (variants.size >= maxLimit) break;
         
-        const origPass = item.pass;
-        const user = item.user;
+        const origPass = item.pass || "";
+        const user = (item.user || "").toLowerCase();
         const tokens = tokenize(origPass);
         
-        for (const ruleId of rules) {
-          if (variants.size >= maxResults) break;
+        for (const ruleId of rulesArray) {
+          if (variants.size >= maxLimit) break;
           
           const ruleFn = RULES[ruleId];
           if (!ruleFn) continue;
           
           try {
-            const result = ruleId.startsWith("10") || ruleId.startsWith("12") 
+            // Rules "10" và "12" dùng username, còn lại dùng tokens
+            const result = (ruleId.startsWith("10") || ruleId.startsWith("12")) 
               ? ruleFn(user) 
               : ruleFn(tokens);
+            
             const variantsArray = Array.isArray(result) ? result : [result];
             
             for (const v of variantsArray) {
-              if (variants.size >= maxResults) break;
-              if (validVariant(v, origPass)) {
-                variants.add(`${user.toLowerCase()}:${v}`);
+              if (variants.size >= maxLimit) break;
+              if (v && validVariant(v, origPass)) {
+                variants.add(`${user}:${v}`);
               }
             }
           } catch (e) {
-            console.error(`Error in rule ${ruleId}:`, e);
+            console.error(`Error in rule ${ruleId}:`, e.message);
+            // Tiếp tục với rule tiếp theo
           }
         }
       }
@@ -296,17 +333,22 @@ app.post("/api/generate", (req, res) => {
     
     res.json({
       success: true,
-      variants: Array.from(variants),
+      variants: Array.from(variants).sort(),
       count: variants.size
     });
     
   } catch (error) {
-    console.error("Error:", error);
+    console.error("Server Error:", error);
     res.status(500).json({ 
       success: false, 
-      error: error.message 
+      error: error.message || "Lỗi server không xác định" 
     });
   }
+});
+
+// Health check endpoint
+app.get("/api/health", (req, res) => {
+  res.json({ status: "ok", message: "Server is running" });
 });
 
 // ============================================
@@ -316,4 +358,5 @@ app.post("/api/generate", (req, res) => {
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
+  console.log(`📝 API available at http://localhost:${PORT}/api/generate`);
 });

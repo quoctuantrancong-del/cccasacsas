@@ -233,6 +233,7 @@ function updateButtonStates() {
   const generateAdvBtn = document.getElementById("generateAdvBtn");
   const generateCustomBtn = document.getElementById("generateCustomBtn");
   const clearBasicBtn = document.getElementById("clearBasicBtn");
+  const clearBtn = document.getElementById("clearBtn");
   const downloadBtn = document.getElementById("downloadBtn");
   const copyBtn = document.getElementById("copyBtn");
   
@@ -240,6 +241,7 @@ function updateButtonStates() {
   if (generateAdvBtn) generateAdvBtn.disabled = !hasFile || !hasAdvRules;
   if (generateCustomBtn) generateCustomBtn.disabled = !hasFile || !hasCustomPatterns;
   if (clearBasicBtn) clearBasicBtn.disabled = lastResult === "" || !hasFile;
+  if (clearBtn) clearBtn.disabled = lastResult === "" || !hasFile;
   if (downloadBtn) downloadBtn.disabled = lastResult === "";
   if (copyBtn) copyBtn.disabled = lastResult === "";
 }
@@ -318,7 +320,14 @@ function handleFileSelect() {
     lastData = parseFileContent(content);
     
     const statsFile = document.getElementById("statsFile");
+    const fileStats = document.getElementById("fileStats");
+    const recordCount = document.getElementById("recordCount");
+    const fileSize = document.getElementById("fileSize");
+    
     if (statsFile) statsFile.textContent = lastData.length;
+    if (recordCount) recordCount.textContent = lastData.length;
+    if (fileSize) fileSize.textContent = (file.size / 1024).toFixed(2) + " KB";
+    if (fileStats) fileStats.style.display = "block";
     
     updateButtonStates();
     showToast(`✅ Tải ${lastData.length} cặp dữ liệu thành công!`, "success");
@@ -491,10 +500,12 @@ function displayResults() {
   const outputEl = document.getElementById("output");
   const countEl = document.getElementById("count");
   const totalCountEl = document.getElementById("totalCount");
+  const ratioCountEl = document.getElementById("ratioCount");
   
   if (outputEl) outputEl.textContent = output || "Không có kết quả.";
   if (countEl) countEl.textContent = items.length;
   if (totalCountEl) totalCountEl.textContent = allResults.size;
+  if (ratioCountEl) ratioCountEl.textContent = lastData.length > 0 ? (allResults.size / lastData.length).toFixed(1) + "x" : "0x";
 }
 
 function stopProcessing() {
@@ -577,7 +588,7 @@ function clearAll() {
   const fileInput = document.getElementById("fileInput");
   if (fileInput) fileInput.value = "";
   
-  document.querySelectorAll(".rules input:checked").forEach((c) => {
+  document.querySelectorAll("input[type='checkbox']:checked").forEach((c) => {
     c.checked = false;
   });
   
@@ -599,6 +610,7 @@ function clearAll() {
   const statsFile = document.getElementById("statsFile");
   const statsVariants = document.getElementById("statsVariants");
   const statsRatio = document.getElementById("statsRatio");
+  const fileStats = document.getElementById("fileStats");
   
   if (output) output.textContent = "Không có dữ liệu. Vui lòng tải file lên.";
   if (count) count.textContent = "0";
@@ -608,6 +620,7 @@ function clearAll() {
   if (statsFile) statsFile.textContent = "0";
   if (statsVariants) statsVariants.textContent = "0";
   if (statsRatio) statsRatio.textContent = "0x";
+  if (fileStats) fileStats.style.display = "none";
   
   updateButtonStates();
   showToast("🗑️ Đã xóa tất cả dữ liệu!", "info");
@@ -641,6 +654,22 @@ document.addEventListener("DOMContentLoaded", () => {
       el.addEventListener("input", updateButtonStates);
     }
   });
+
+  // Add event listener to generate custom button
+  const generateCustomBtn = document.getElementById("generateCustomBtn");
+  if (generateCustomBtn) {
+    generateCustomBtn.addEventListener("click", () => generateVariants("custom"));
+  }
+
+  // Add id to clear button if missing
+  const clearBtn = document.getElementById("clearBtn");
+  if (!clearBtn) {
+    const basicTab = document.getElementById("basic");
+    const clearBtnNew = document.querySelector('.tab-actions button[onclick="clearAll()"]');
+    if (clearBtnNew) {
+      clearBtnNew.id = "clearBtn";
+    }
+  }
   
   console.log("✅ App initialized!");
 });
